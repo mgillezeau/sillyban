@@ -51,12 +51,12 @@ function getSettings() {
 
 function getChatState() {
     if (!chat_metadata[MODULE_NAME]) {
-        chat_metadata[MODULE_NAME] = { currentBan: '', lastAnalyzedAt: -1, lastSent: '' };
+        chat_metadata[MODULE_NAME] = { currentBan: '', lastAnalyzedAt: -1, lastSent: '', lastError: '' };
     }
-    if (chat_metadata[MODULE_NAME].lastSent === undefined) {
-        chat_metadata[MODULE_NAME].lastSent = '';
-    }
-    return chat_metadata[MODULE_NAME];
+    const s = chat_metadata[MODULE_NAME];
+    if (s.lastSent === undefined) s.lastSent = '';
+    if (s.lastError === undefined) s.lastError = '';
+    return s;
 }
 
 function getCurrentBan() {
@@ -135,19 +135,28 @@ async function runAnalysis({ silent = false } = {}) {
 
     isRunning = true;
     setRunningUI(true);
+    const state = getChatState();
     try {
         const formatted = formatMessages(window);
-        const result = await callAnalyzer(formatted);
-        const state = getChatState();
-        state.currentBan = result;
-        state.lastAnalyzedAt = chat.length;
         state.lastSent = formatted;
+        state.lastError = '';
         await saveMetadata();
         updateStatusDisplay();
-        if (!silent) toastr.success('Repetition ban: updated.');
+
+        const result = await callAnalyzer(formatted);
+        state.currentBan = result;
+        state.lastAnalyzedAt = chat.length;
+        await saveMetadata();
+        updateStatusDisplay();
+        if (!silent) {
+            toastr.success(result ? 'Repetition ban: updated.' : 'Repetition ban: analyzer returned empty (nothing flagged).');
+        }
     } catch (err) {
         console.error('[repetition_ban]', err);
-        toastr.error(String(err?.message ?? err), 'Repetition ban');
+        state.lastError = String(err?.message ?? err);
+        await saveMetadata();
+        updateStatusDisplay();
+        toastr.error(state.lastError, 'Repetition ban');
     } finally {
         isRunning = false;
         setRunningUI(false);
@@ -228,16 +237,24 @@ const settingsHtml = `
                 <summary style="cursor: pointer; font-weight: 600;">Show last messages sent to analyzer</summary>
                 <div id="rb_last_sent" class="repetition-ban-status" style="max-height: 300px; overflow-y: auto; font-style: normal; font-family: monospace; font-size: 0.85em;"></div>
             </details>
+
+            <details style="margin-top: 6px;">
+                <summary style="cursor: pointer; font-weight: 600;">Show last error</summary>
+                <div id="rb_last_error" class="repetition-ban-status" style="font-style: normal; color: var(--warning, #c66);"></div>
+            </details>
         </div>
     </div>
 </div>
 `;
 
 function updateStatusDisplay() {
+    const state = getChatState();
     const el = document.getElementById('rb_status');
     if (el) el.textContent = getCurrentBan() || '(empty — no analysis yet for this chat)';
     const sent = document.getElementById('rb_last_sent');
-    if (sent) sent.textContent = getChatState().lastSent || '(no analysis has run for this chat yet)';
+    if (sent) sent.textContent = state.lastSent || '(no analysis has run for this chat yet)';
+    const err = document.getElementById('rb_last_error');
+    if (err) err.textContent = state.lastError || '(no errors)';
 }
 
 function setRunningUI(running) {
@@ -311,6 +328,7 @@ function bindSettings() {
         state.currentBan = '';
         state.lastAnalyzedAt = -1;
         state.lastSent = '';
+        state.lastError = '';
         await saveMetadata();
         updateStatusDisplay();
         toastr.success('Repetition ban cleared for this chat.');
