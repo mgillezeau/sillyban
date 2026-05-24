@@ -4,19 +4,17 @@ import {
     event_types,
     saveSettingsDebounced,
     saveMetadata,
-    getRequestHeaders,
     chat,
     chat_metadata,
-    main_api,
 } from '../../../../script.js';
 import { MacrosParser } from '../../../macros.js';
-import { oai_settings, chat_completion_sources } from '../../../openai.js';
+import { ConnectionManagerRequestService } from '../../shared.js';
 
 const MODULE_NAME = 'repetition_ban';
-const OPENROUTER_SOURCE = chat_completion_sources?.OPENROUTER ?? 'openrouter';
 
 const defaultSettings = {
     enabled: true,
+    profileId: '',
     turnInterval: 10,
     windowSize: 20,
     model: '',
@@ -60,8 +58,8 @@ function getCurrentBan() {
     }
 }
 
-function isOpenRouterActive() {
-    return main_api === 'openai' && oai_settings.chat_completion_source === OPENROUTER_SOURCE;
+function getConnectionProfiles() {
+    return extension_settings?.connectionManager?.profiles ?? [];
 }
 
 function formatMessages(messages) {
@@ -70,37 +68,31 @@ function formatMessages(messages) {
 
 async function callAnalyzer(messages) {
     const settings = getSettings();
-    const model = (settings.model || '').trim() || oai_settings.openrouter_model;
-
-    if (!model) {
-        throw new Error('No model set — choose one in the extension settings or in your OpenRouter connection.');
+    if (!settings.profileId) {
+        throw new Error('No connection profile selected.');
+    }
+    if (!getConnectionProfiles().some(p => p.id === settings.profileId)) {
+        throw new Error('Selected connection profile no longer exists.');
     }
 
-    const payload = {
-        messages: [
-            { role: 'system', content: settings.systemPrompt },
-            { role: 'user', content: formatMessages(messages) },
-        ],
-        model,
-        chat_completion_source: OPENROUTER_SOURCE,
-        max_tokens: settings.maxTokens,
-        temperature: settings.temperature,
-        stream: false,
-    };
+    const prompt = [
+        { role: 'system', content: settings.systemPrompt },
+        { role: 'user', content: formatMessages(messages) },
+    ];
 
-    const response = await fetch('/api/backends/chat-completions/generate', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify(payload),
-    });
+    const overridePayload = { temperature: settings.temperature };
+    const overrideModel = (settings.model || '').trim();
+    if (overrideModel) overridePayload.model = overrideModel;
 
-    if (!response.ok) {
-        const body = await response.text().catch(() => '');
-        throw new Error(`OpenRouter request failed (${response.status}): ${body.slice(0, 300)}`);
-    }
+    const result = await ConnectionManagerRequestService.sendRequest(
+        settings.profileId,
+        prompt,
+        settings.maxTokens,
+        { extractData: true, includePreset: false, includeInstruct: false },
+        overridePayload,
+    );
 
-    const data = await response.json();
-    return String(data?.choices?.[0]?.message?.content ?? '').trim();
+    return String(result?.content ?? '').trim();
 }
 
 async function runAnalysis({ silent = false } = {}) {
@@ -113,8 +105,8 @@ async function runAnalysis({ silent = false } = {}) {
         if (!silent) toastr.warning('Repetition ban: disabled.');
         return;
     }
-    if (!isOpenRouterActive()) {
-        if (!silent) toastr.warning('Repetition ban: active connection is not OpenRouter.');
+    if (!settings.profileId) {
+        if (!silent) toastr.warning('Repetition ban: no connection profile selected.');
         return;
     }
     if (!Array.isArray(chat) || chat.length === 0) {
@@ -181,6 +173,12 @@ const settingsHtml = `
                 <span>Enabled</span>
             </label>
 
+            <label for="rb_profile">Connection profile</label>
+            <div class="repetition-ban-row">
+                <select id="rb_profile" class="text_pole" style="flex: 1;"></select>
+                <input id="rb_profile_refresh" class="menu_button" type="button" value="↻" title="Refresh profile list" />
+            </div>
+
             <div class="repetition-ban-row">
                 <label for="rb_turn_interval" style="margin: 0;">Run every</label>
                 <input id="rb_turn_interval" type="number" min="1" step="1" />
@@ -193,7 +191,7 @@ const settingsHtml = `
                 <span>messages</span>
             </div>
 
-            <label for="rb_model">Model (OpenRouter ID — blank uses your active OR model)</label>
+            <label for="rb_model">Model override (blank = use the profile's model)</label>
             <input id="rb_model" type="text" class="text_pole" placeholder="e.g. anthropic/claude-haiku-4.5" />
 
             <label for="rb_max_tokens">Max tokens</label>
@@ -222,8 +220,7 @@ const settingsHtml = `
 function updateStatusDisplay() {
     const el = document.getElementById('rb_status');
     if (!el) return;
-    const ban = getCurrentBan();
-    el.textContent = ban || '(empty — no analysis yet for this chat)';
+    el.textContent = getCurrentBan() || '(empty — no analysis yet for this chat)';
 }
 
 function setRunningUI(running) {
@@ -233,10 +230,30 @@ function setRunningUI(running) {
     btn.value = running ? 'Running…' : 'Run now';
 }
 
+function populateProfileDropdown() {
+    const settings = getSettings();
+    const sel = document.getElementById('rb_profile');
+    if (!sel) return;
+    const profiles = getConnectionProfiles().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    sel.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = profiles.length ? '— select a profile —' : '(no profiles found — set one up in Connection Manager)';
+    sel.appendChild(placeholder);
+    for (const p of profiles) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        sel.appendChild(opt);
+    }
+    sel.value = settings.profileId || '';
+}
+
 function bindSettings() {
     const settings = getSettings();
 
     const $enabled = $('#rb_enabled');
+    const $profile = $('#rb_profile');
     const $interval = $('#rb_turn_interval');
     const $window = $('#rb_window_size');
     const $model = $('#rb_model');
@@ -245,6 +262,7 @@ function bindSettings() {
     const $sys = $('#rb_system_prompt');
 
     $enabled.prop('checked', settings.enabled);
+    populateProfileDropdown();
     $interval.val(settings.turnInterval);
     $window.val(settings.windowSize);
     $model.val(settings.model);
@@ -253,6 +271,8 @@ function bindSettings() {
     $sys.val(settings.systemPrompt);
 
     $enabled.on('change', () => { settings.enabled = $enabled.prop('checked'); saveSettingsDebounced(); });
+    $profile.on('change', () => { settings.profileId = String($profile.val() || ''); saveSettingsDebounced(); });
+    $('#rb_profile_refresh').on('click', () => populateProfileDropdown());
     $interval.on('change', () => { settings.turnInterval = Math.max(1, parseInt($interval.val(), 10) || 10); saveSettingsDebounced(); });
     $window.on('change', () => { settings.windowSize = Math.max(1, parseInt($window.val(), 10) || 20); saveSettingsDebounced(); });
     $model.on('change', () => { settings.model = String($model.val() || '').trim(); saveSettingsDebounced(); });
