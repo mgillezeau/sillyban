@@ -1,3 +1,4 @@
+console.log('[sillyban] module top-level executing');
 import { extension_settings } from '../../../extensions.js';
 import {
     eventSource,
@@ -281,14 +282,19 @@ function bindSettings() {
     updateStatusDisplay();
 }
 
+console.log('[sillyban] module-body reached, imports resolved');
+
 jQuery(() => {
+    console.log('[sillyban] jQuery ready handler firing');
     getSettings();
     const parent = document.getElementById('extensions_settings') || document.getElementById('extensions_settings2');
+    console.log('[sillyban] container found:', parent?.id || 'NONE');
     if (!parent) {
-        console.error('[repetition_ban] no extensions_settings container found');
+        console.error('[sillyban] no extensions_settings container found');
         return;
     }
     $(parent).append(settingsHtml);
+    console.log('[sillyban] UI appended; .repetition-ban-settings count:', document.querySelectorAll('.repetition-ban-settings').length);
     bindSettings();
 
     MacrosParser.registerMacro(
