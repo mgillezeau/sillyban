@@ -1,0 +1,40 @@
+.repetition-ban-settings .repetition-ban-status {
+    background-color: var(--SmartThemeBlurTintColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    padding: 8px;
+    margin-top: 5px;
+    min-height: 40px;
+    white-space: pre-wrap;
+    font-style: italic;
+    opacity: 0.9;
+}
+
+.repetition-ban-settings textarea {
+    width: 100%;
+    font-family: var(--mainFontFamily);
+    box-sizing: border-box;
+}
+
+.repetition-ban-settings input.text_pole {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.repetition-ban-settings .repetition-ban-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin: 6px 0;
+    flex-wrap: wrap;
+}
+
+.repetition-ban-settings .repetition-ban-row input[type="number"] {
+    width: 80px;
+}
+
+.repetition-ban-settings label {
+    display: block;
+    margin-top: 8px;
+    font-weight: 600;
+}
