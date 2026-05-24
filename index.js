@@ -283,7 +283,12 @@ function bindSettings() {
 
 jQuery(() => {
     getSettings();
-    $('#extensions_settings2').append(settingsHtml);
+    const parent = document.getElementById('extensions_settings') || document.getElementById('extensions_settings2');
+    if (!parent) {
+        console.error('[repetition_ban] no extensions_settings container found');
+        return;
+    }
+    $(parent).append(settingsHtml);
     bindSettings();
 
     MacrosParser.registerMacro(
