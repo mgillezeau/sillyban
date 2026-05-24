@@ -19,12 +19,18 @@ const defaultSettings = {
     windowSize: 20,
     model: '',
     systemPrompt:
-        'You are an editor reviewing recent chat messages for repetitive language. ' +
-        'Identify words, phrases, and expressions that have been used excessively across the messages provided. ' +
-        'Output ONLY a single sentence in this exact format: ' +
-        '"Minimize use of the following terms and expressions: <comma-separated list>." ' +
-        'No commentary, no explanation, no markdown. ' +
-        'If nothing stands out as overused, output an empty response.',
+        'You are an editor reviewing a roleplay/creative-writing transcript for stylistic repetition.\n\n' +
+        'IGNORE entirely: pronouns ("you", "I", "she", etc.), articles ("the", "a"), prepositions, conjunctions, copulas, ' +
+        'common verbs ("said", "looked", "went"), proper nouns/character names, and any other ordinary function words. ' +
+        'High frequency alone is NOT the criterion — only flag things that are notable BECAUSE of how often they recur.\n\n' +
+        'DO flag: distinctive multi-word phrases, body-language tics ("her breath hitched", "a shiver ran down"), ' +
+        'sensory clichés ("the air thick with"), recurring metaphors, "a mix of X and Y" constructions, ' +
+        'repeated emotional descriptors, stylistic crutches the writer is leaning on, and any vocabulary or imagery ' +
+        'that shows up enough times across the sample to feel like a tic rather than a choice.\n\n' +
+        'Output ONLY a single sentence in this exact format:\n' +
+        '"Minimize use of the following terms and expressions: <comma-separated list>."\n' +
+        'No commentary, no explanation, no markdown, no bullet points. ' +
+        'If nothing stylistically notable recurs, output an empty response.',
     maxTokens: 400,
     temperature: 0.3,
 };
@@ -45,7 +51,10 @@ function getSettings() {
 
 function getChatState() {
     if (!chat_metadata[MODULE_NAME]) {
-        chat_metadata[MODULE_NAME] = { currentBan: '', lastAnalyzedAt: -1 };
+        chat_metadata[MODULE_NAME] = { currentBan: '', lastAnalyzedAt: -1, lastSent: '' };
+    }
+    if (chat_metadata[MODULE_NAME].lastSent === undefined) {
+        chat_metadata[MODULE_NAME].lastSent = '';
     }
     return chat_metadata[MODULE_NAME];
 }
@@ -66,7 +75,7 @@ function formatMessages(messages) {
     return messages.map(m => `${m.name}: ${m.mes}`).join('\n\n');
 }
 
-async function callAnalyzer(messages) {
+async function callAnalyzer(formattedUserContent) {
     const settings = getSettings();
     if (!settings.profileId) {
         throw new Error('No connection profile selected.');
@@ -77,7 +86,7 @@ async function callAnalyzer(messages) {
 
     const prompt = [
         { role: 'system', content: settings.systemPrompt },
-        { role: 'user', content: formatMessages(messages) },
+        { role: 'user', content: formattedUserContent },
     ];
 
     const overridePayload = { temperature: settings.temperature };
@@ -127,10 +136,12 @@ async function runAnalysis({ silent = false } = {}) {
     isRunning = true;
     setRunningUI(true);
     try {
-        const result = await callAnalyzer(window);
+        const formatted = formatMessages(window);
+        const result = await callAnalyzer(formatted);
         const state = getChatState();
         state.currentBan = result;
         state.lastAnalyzedAt = chat.length;
+        state.lastSent = formatted;
         await saveMetadata();
         updateStatusDisplay();
         if (!silent) toastr.success('Repetition ban: updated.');
@@ -212,6 +223,11 @@ const settingsHtml = `
             <label style="margin-top: 0;">Current ban list (this chat):</label>
             <div id="rb_status" class="repetition-ban-status"></div>
             <small>Insert <code>{{repetition_ban}}</code> in your preset where you want this injected.</small>
+
+            <details style="margin-top: 10px;">
+                <summary style="cursor: pointer; font-weight: 600;">Show last messages sent to analyzer</summary>
+                <div id="rb_last_sent" class="repetition-ban-status" style="max-height: 300px; overflow-y: auto; font-style: normal; font-family: monospace; font-size: 0.85em;"></div>
+            </details>
         </div>
     </div>
 </div>
@@ -219,8 +235,9 @@ const settingsHtml = `
 
 function updateStatusDisplay() {
     const el = document.getElementById('rb_status');
-    if (!el) return;
-    el.textContent = getCurrentBan() || '(empty — no analysis yet for this chat)';
+    if (el) el.textContent = getCurrentBan() || '(empty — no analysis yet for this chat)';
+    const sent = document.getElementById('rb_last_sent');
+    if (sent) sent.textContent = getChatState().lastSent || '(no analysis has run for this chat yet)';
 }
 
 function setRunningUI(running) {
@@ -293,6 +310,7 @@ function bindSettings() {
         const state = getChatState();
         state.currentBan = '';
         state.lastAnalyzedAt = -1;
+        state.lastSent = '';
         await saveMetadata();
         updateStatusDisplay();
         toastr.success('Repetition ban cleared for this chat.');
