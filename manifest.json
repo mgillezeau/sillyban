@@ -1,15 +1,13 @@
 {
-  "name": "sillyban",
-  "display_name": "Repetition Ban",
-  "loading_order": 100,
-  "requires": [],
-  "optional": [],
-  "js": "index.js",
-  "css": "style.css",
-  "author": "",
-  "description": "Periodically analyzes recent chat messages via OpenRouter to identify repetitive phrases, and exposes the result as a {{repetition_ban}} macro for use in presets.",
-  "version": "1.0.0",
-  "homePage": "https://github.com/mgillezeau/sillyban",
-  "auto_update": false,
-  "manifest_version": 3
+    "name": "sillyban",
+    "display_name": "Repetition Ban",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "mgillezeau",
+    "description": "Periodically analyzes recent chat messages via OpenRouter to identify repetitive phrases, and exposes the result as a {{repetition_ban}} macro for use in presets.",
+    "version": "1.0.1",
+    "manifest_version": 3
 }

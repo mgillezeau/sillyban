@@ -1,11 +1,9 @@
-console.log('[sillyban] module top-level executing');
-try { window.toastr?.info('[sillyban] script loaded', '', { timeOut: 8000 }); } catch {}
 import { extension_settings } from '../../../extensions.js';
 import {
     eventSource,
     event_types,
     saveSettingsDebounced,
-    saveMetadataDebounced,
+    saveMetadata,
     getRequestHeaders,
     chat,
     chat_metadata,
@@ -141,7 +139,7 @@ async function runAnalysis({ silent = false } = {}) {
         const state = getChatState();
         state.currentBan = result;
         state.lastAnalyzedAt = chat.length;
-        saveMetadataDebounced();
+        await saveMetadata();
         updateStatusDisplay();
         if (!silent) toastr.success('Repetition ban: updated.');
     } catch (err) {
@@ -271,11 +269,11 @@ function bindSettings() {
     });
 
     $('#rb_run_now').on('click', () => runAnalysis());
-    $('#rb_clear').on('click', () => {
+    $('#rb_clear').on('click', async () => {
         const state = getChatState();
         state.currentBan = '';
         state.lastAnalyzedAt = -1;
-        saveMetadataDebounced();
+        await saveMetadata();
         updateStatusDisplay();
         toastr.success('Repetition ban cleared for this chat.');
     });
@@ -283,24 +281,11 @@ function bindSettings() {
     updateStatusDisplay();
 }
 
-console.log('[sillyban] module-body reached, imports resolved');
-try { toastr.info('[sillyban] imports OK', '', { timeOut: 8000 }); } catch {}
-
 jQuery(() => {
-    console.log('[sillyban] jQuery ready handler firing');
-    try { toastr.info('[sillyban] jQuery ready', '', { timeOut: 8000 }); } catch {}
     getSettings();
     const parent = document.getElementById('extensions_settings') || document.getElementById('extensions_settings2');
-    const where = parent?.id || 'NONE';
-    console.log('[sillyban] container:', where);
-    try { toastr.info(`[sillyban] container: ${where}`, '', { timeOut: 12000 }); } catch {}
-    if (!parent) {
-        try { toastr.error('[sillyban] no extensions_settings container found', '', { timeOut: 20000 }); } catch {}
-        return;
-    }
+    if (!parent) return;
     $(parent).append(settingsHtml);
-    const count = document.querySelectorAll('.repetition-ban-settings').length;
-    try { toastr.success(`[sillyban] UI appended (${count} found)`, '', { timeOut: 12000 }); } catch {}
     bindSettings();
 
     MacrosParser.registerMacro(
